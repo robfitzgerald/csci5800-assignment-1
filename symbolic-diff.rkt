@@ -157,10 +157,9 @@
            (make-product (deriv (multiplier exp) var)
                          (multiplicand exp))))
         ((exponentiation? exp)
-         (make-sum
-           (make-product (multiplier exp)
-                         (deriv (base exp) var))
-           (make-product (deriv (exponent exp) var)
-                         (multiplicand exp))))
+         (make-exponentiation
+           (make-product (base exp)
+                         (exponent exp))
+           (- (exponent exp) 1)))
         (else
          (error "unknown expression type - DERIV" exp))))
