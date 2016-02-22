@@ -96,6 +96,53 @@
          (* m1 m2))
         (else (list '* m1 m2))))
 
+;;; (exponentiation? e) => boolean?
+;;;   e: any/c
+;;; is the provided expression an exponential?
+(define (exponentiation? e)
+  (and (pair? e)
+       (eq? (first e) '**)))
+
+;;; (base e) => number?
+;;;   e: list?
+;;; returns the base of this exponential expression
+(define (base e)
+  (second e))
+
+;;; (exponent e) => number?
+;;;   e: list?
+;;; returns the exponent of this exponential expression
+(define (exponent e)
+  (third e))
+
+;;; (make-exponentiation b e) => list?
+;;;   b: any/c
+;;;   e: any/c
+;;; construct an exponential expression
+(define (make-exponentiation b e)
+  (cond ((=number? e 0) 1)
+        ((=number? e 1) b)
+        ((and (number? b)
+             (number? e))
+         (exponentiate b e))
+        (else (list '** b e))))
+
+;;; (exponentiate b e) => number?
+;;;   b: number?
+;;;   e: number?
+;;; calculate an exponent
+(define (exponentiate b e)
+  (cond ((< e 0)
+         (error "cannot exponentiate: " b e))
+        ((eq? e 0) 1)
+        ((> e 0)
+         (* b (exponentiate b (- e 1))))))
+
+          
+;;; (deriv exp var) => list?
+;;;   exp: list?
+;;;   var: variable?
+;;; differentiate the expression exp with respect to the variable var
 (define (deriv exp var)
   (cond ((number? exp) 0)
         ((variable? exp)
@@ -108,6 +155,12 @@
            (make-product (multiplier exp)
                          (deriv (multiplicand exp) var))
            (make-product (deriv (multiplier exp) var)
+                         (multiplicand exp))))
+        ((exponentiation? exp)
+         (make-sum
+           (make-product (multiplier exp)
+                         (deriv (base exp) var))
+           (make-product (deriv (exponent exp) var)
                          (multiplicand exp))))
         (else
          (error "unknown expression type - DERIV" exp))))
