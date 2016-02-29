@@ -50,7 +50,9 @@
 ;;;   e: list?
 ;;; Augend of the sum e, is the third item in the list.
 (define (augend e)
-  (third e))
+  (cond ((eq? (length e) 3)
+         (third e))
+        (else (0)))) ; recurse?
 
 ;;; (make-sum a1 a2) => list?
 ;;;   a1: any/c
@@ -161,5 +163,15 @@
            (make-product (base exp)
                          (exponent exp))
            (- (exponent exp) 1)))
+        (else
+         (error "unknown expression type - DERIV" exp))))
+
+(define (deriv2 exp var)
+  (cond ((number? exp) 0)
+        ((variable? exp)
+         (if (same-variable? exp var) 1 0))
+        ((and (pair? exp)
+              (symbol? (car exp)))
+         ((hash-ref diff-table (car exp)) exp var))
         (else
          (error "unknown expression type - DERIV" exp))))
