@@ -3,7 +3,6 @@
 ;;; symbolic-diff.rkt
 ;;; rob fitzgerald
 ;;; UCD 2016sp - csci5800 - d. williams
-
 ;;; implementation of symbolic differentiation in racket
 ;;; ƒ (deriv exp var) and helper ƒunctions taken from 
 ;;; "Structure and Interpretation of Computer Programs" 
@@ -46,13 +45,14 @@
 (define (addend e)	          
   (second e))
 
-;;; (augend e) => any
+;;; (augend e) => list?
 ;;;   e: list?
-;;; Augend of the sum e, is the third item in the list.
+;;; Augend of the sum e, is the third item in the list, or all items 3rd and beyond.
 (define (augend e)
   (cond ((eq? (length e) 3)
-         (third e))
-        (else (0)))) ; recurse?
+         (list(third e)))
+        (else
+         (drop e 2))))
 
 ;;; (make-sum a1 a2) => list?
 ;;;   a1: any/c
@@ -139,8 +139,28 @@
         ((eq? e 0) 1)
         ((> e 0)
          (* b (exponentiate b (- e 1))))))
+     
 
-          
+;;; diff-table => hash?
+;;; table of differentiation functions
+(define diff-table (make-hash))
+(hash-set! diff-table '+ (lambda (exp var)
+                           (make-sum (deriv (addend exp) var)
+                                     (foldl + 0 (for/list ((item (in-list (augend exp))))
+                                       (deriv item var))))))
+(hash-set! diff-table '* (lambda (exp var)
+                           (make-sum
+                            (make-product (multiplier exp)
+                                          (deriv (multiplicand exp) var))
+                            (make-product (deriv (multiplier exp) var)
+                                          (multiplicand exp)))))
+(hash-set! diff-table '** (lambda (exp var)
+                            (make-exponentiation
+                             (make-product (base exp)
+                                           (exponent exp))
+                             (- (exponent exp) 1))))
+
+
 ;;; (deriv exp var) => list?
 ;;;   exp: list?
 ;;;   var: variable?
@@ -149,29 +169,34 @@
   (cond ((number? exp) 0)
         ((variable? exp)
          (if (same-variable? exp var) 1 0))
-        ((sum? exp)
-         (make-sum (deriv (addend exp) var)
-                   (deriv (augend exp) var)))
-        ((product? exp)
-         (make-sum
-           (make-product (multiplier exp)
-                         (deriv (multiplicand exp) var))
-           (make-product (deriv (multiplier exp) var)
-                         (multiplicand exp))))
-        ((exponentiation? exp)
-         (make-exponentiation
-           (make-product (base exp)
-                         (exponent exp))
-           (- (exponent exp) 1)))
-        (else
-         (error "unknown expression type - DERIV" exp))))
-
-(define (deriv2 exp var)
-  (cond ((number? exp) 0)
-        ((variable? exp)
-         (if (same-variable? exp var) 1 0))
         ((and (pair? exp)
               (symbol? (car exp)))
          ((hash-ref diff-table (car exp)) exp var))
         (else
          (error "unknown expression type - DERIV" exp))))
+
+(define-syntax-rule (define-differentiator (op exp var)
+                      (body ...))
+  (hash-set! diff-table 'op
+             (lambda (exp var)
+               body ...)))
+
+(define simplification-table (make-hash))
+;;; (simplify exp) => list?
+;;;   exp: an expression / list to be simplified
+;;; apply simplification rules stored in simplification-table to an expression
+(define (simplify exp)
+  ((cond ((and (pair? exp)
+               (symbol? (car exp))
+               (hash-has-key? (simplification-table (car exp))))
+          ((hash-ref simplification-table (car exp) exp)))
+         (else
+          exp))))
+
+(hash-set! simplification-table '+ (lambda (exp)
+           (cond ((=number? (car exp) 0) (cdr exp))
+                 ((=number? (cdr exp) 0) (car exp))
+                 ((and (number? (car exp))
+                       (number? (cdr exp)))
+                  (+ (addend exp) (cdr exp)))
+                 (else exp))))
