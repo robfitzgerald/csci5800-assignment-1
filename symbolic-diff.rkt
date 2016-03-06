@@ -3,7 +3,6 @@
 ;;; symbolic-diff.rkt
 ;;; rob fitzgerald
 ;;; UCD 2016sp - csci5800 - d. williams
-
 ;;; implementation of symbolic differentiation in racket
 ;;; ƒ (deriv exp var) and helper ƒunctions taken from 
 ;;; "Structure and Interpretation of Computer Programs" 
@@ -46,13 +45,37 @@
 (define (addend e)	          
   (second e))
 
-;;; (augend e) => any
+;;; (augend e) => list?
 ;;;   e: list?
-;;; Augend of the sum e, is the third item in the list.
+;;; Augend of the sum e, is the third item in the list, or all items 3rd and beyond.
 (define (augend e)
   (cond ((eq? (length e) 3)
          (third e))
-        (else (0)))) ; recurse?
+        (else
+         (op-recurse (cddr e) make-sum))))
+
+;;; (op-recurse e op) -> number? | list?
+;;;   e: list?
+;;;   op: any simplification function (make-sum, make-product)
+;;; handles operations that have more than 2 operands
+(define (op-recurse e op)
+  (cond        ((= (length e) 2)
+               (op (first e) (second e)))
+               ((> (length e) 2)
+               (op (first e) (op-recurse (cdr e) op)))
+               (else
+                (error "parameter should be list with length > 1"))))
+         
+;;; note: wanted to implement 'any-sized list operations' via for/fold as follows, but
+;;; didn't know how to handle the two-valued result, and couldn't find examples via
+;;; racket-lang.org or stackoverflow.com
+;         (for/fold ([accum 0]
+;                    [notnums null])
+;                   ([x (cddr e)])
+;           (values (if (number? x)
+;                         (+ accum x) accum) 
+;                   (if (not (number? x)) (cons x notnums) notnums)))
+;         )))
 
 ;;; (make-sum a1 a2) => list?
 ;;;   a1: any/c
@@ -83,7 +106,10 @@
 ;;;   e: list?
 ;;; Multiplicand of the product e.
 (define (multiplicand e)
-  (third e))
+  (cond ((eq? (length e) 3)
+         (third e))
+        (else
+         (op-recurse (cddr e) make-product))))
 
 ;;; (make-product m1 m2) => list?
 ;;;   m1: any/c
@@ -139,8 +165,8 @@
         ((eq? e 0) 1)
         ((> e 0)
          (* b (exponentiate b (- e 1))))))
+     
 
-          
 ;;; (deriv exp var) => list?
 ;;;   exp: list?
 ;;;   var: variable?
@@ -149,29 +175,48 @@
   (cond ((number? exp) 0)
         ((variable? exp)
          (if (same-variable? exp var) 1 0))
-        ((sum? exp)
-         (make-sum (deriv (addend exp) var)
-                   (deriv (augend exp) var)))
-        ((product? exp)
-         (make-sum
-           (make-product (multiplier exp)
-                         (deriv (multiplicand exp) var))
-           (make-product (deriv (multiplier exp) var)
-                         (multiplicand exp))))
-        ((exponentiation? exp)
-         (make-exponentiation
-           (make-product (base exp)
-                         (exponent exp))
-           (- (exponent exp) 1)))
-        (else
-         (error "unknown expression type - DERIV" exp))))
-
-(define (deriv2 exp var)
-  (cond ((number? exp) 0)
-        ((variable? exp)
-         (if (same-variable? exp var) 1 0))
         ((and (pair? exp)
               (symbol? (car exp)))
          ((hash-ref diff-table (car exp)) exp var))
         (else
          (error "unknown expression type - DERIV" exp))))
+
+(define-syntax-rule (define-differentiator (op exp var)
+                      (body ...))
+  (hash-set! diff-table 'op
+             (lambda (exp var)
+               body ...)))
+
+
+
+;;; diff-table => hash?
+;;; table of differentiation functions
+(define diff-table (make-hash))
+(hash-set! diff-table '+ (lambda (exp var)
+                           (make-sum (deriv (addend exp) var)
+                                     (deriv (augend exp) var))))
+(hash-set! diff-table '* (lambda (exp var)
+                           (make-sum
+                            (make-product (multiplier exp)
+                                          (deriv (multiplicand exp) var))
+                            (make-product (deriv (multiplier exp) var)
+                                          (multiplicand exp)))))
+(hash-set! diff-table '** (lambda (exp var)
+                            (make-exponentiation
+                             (make-product (base exp)
+                                           (exponent exp))
+                             (- (exponent exp) 1))))
+
+
+
+(define simplification-table (make-hash))
+;;; (simplify exp) => list?
+;;;   exp: an expression / list to be simplified
+;;; apply simplification rules stored in simplification-table to an expression
+(define (simplify exp)
+  ((cond ((and (pair? exp)
+               (symbol? (car exp))
+               (hash-has-key? (simplification-table (car exp))))
+          ((hash-ref simplification-table (car exp) exp)))
+         (else
+          exp))))
