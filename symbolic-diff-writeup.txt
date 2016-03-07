@@ -1,0 +1,31 @@
+Rob Fitzgerald
+CSCI 5800 - Expert Systems / Heuristic Programming
+Programming Assignment 1: Writeup section
+
+examples:
+
+> (deriv '(+ (* 3 x y) (** x 5) 123) 'x)
+'(+ (* 3 y) (** (* x 5) 4))
+> (deriv '(+ (** x 3) (** x 2) (** x 1)) 'x)
+'(+ (** (* x 3) 2) (+ (* x 2) 1))
+> (deriv '(+ 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 (** x 123456)) 'x)
+'(** (* x 123456) 123455)
+
+Exercises
+1. 4800 Requirements:
+  Implement the code from the reading
+  Extend basic differentiator to handle exponentiation
+  Handle any length sum/product operations
+
+I followed your advice, and copied by hand from the source, so I could see all the operations involved in the basic deriv function.  Adding exponentiation required thinking about simple exponential derivatives - specifically of the form a^b, where a can be either a variable or integer, and b can only be a positive integer.
+Handling aribitrarily-long sums and products actually threw me off quite a bit for a moment.  It is because I was concerned with the simplification of derivatives of the form (op a b c d ..) where the order of integers and variables is not guaranteed.  I began constructing a for/fold solution that would build up two values, one an accumulator of integer values, and one a list of variables.  I got stung by the format of for/fold and, after talking with other students, confirmed that this was beyond the scope of the problem definition.
+
+2. 5800 B-Level Requirements:
+  Make the differentiation extensible
+
+The hash table references for the diff-table was easy, via hash-set!, and referencing it.  That was a quick fix.  Writing a syntax rule was unclear to me.  Even though I had an example from class, it took me a moment to understand the context of the ellipses (body ...) and what it implied.  My confusion was mostly about what the body of the syntax hands off to the hash-table, and after having bugs with the closures, I sorted out what was being handed off to the lambda in define-differentiator.
+
+3. 5800 A-Level Requirements:
+  Make the simplification extensible
+
+When I abstracted out simplification and built a syntax for it, I got a bit confused.  As I said earlier, I didn't read the requirement clearly that stated it doesn't need to be perfect.  I spent a long time butting heads with testing the output of my generalized simplify function and I made the mistake of trying to solve this and the problem of arbitrarily-long sums or products at the same time.  So, I thrashed about a bit during this part of the process, until I found errors in my implementation during a code review with a fellow student.  When describing my simplify function, I realized I hadn't adjusted the chain of functions in all places to now accept 1 parameter, an expression, versus the previous (exp var) format.  I also forgot to wrap the outer call to diff-table with a simplify until exactly... now.  ;-)

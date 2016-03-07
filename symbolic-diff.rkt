@@ -9,6 +9,162 @@
 ;;; by Abelson and Sussman.
 ;;; @see https://mitpress.mit.edu/sicp/full-text/sicp/book/node39.html
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; developer-extensible operations: differentiation and simplification ;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; see examples below for differentiation and simplification of        ;;;
+;;; sums, products, and exponents.                                      ;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; diff-table => hash?
+;;; table of differentiation functions
+(define diff-table (make-hash))
+
+;;; (define-differentiator (op exp var) (body ...))
+;;;   op: arithmetic operator
+;;;   exp: list?
+;;;   var: variable?
+;;;   body: a function that takes two parameters, 'exp' and 'var'
+;;; interface for developer to define new differentiation functions
+(define-syntax-rule (define-differentiator (op exp var)
+                      (body ...))
+  (hash-set! diff-table 'op
+             (lambda (exp var)
+               body ...)))
+
+;;; ((hash-ref diff-table +) exp var) => list?
+;;;   exp: list?
+;;; Calculates the derivative of a sum.
+(define-differentiator (+ exp var)
+  (simplify (list '+ (deriv (addend exp) var)
+            (deriv (augend exp) var))))
+
+;;; ((hash-ref diff-table *) exp var) => list?
+;;;   exp: list?
+;;; Calculates the derivative of a product.
+(define-differentiator (* exp var)
+  (simplify (list '+
+   (simplify (list '* (multiplier exp)
+             (deriv (multiplicand exp) var)))
+   (simplify (list '* (deriv (multiplier exp) var)
+             (multiplicand exp))))))
+
+;;; ((hash-ref diff-table **) exp var) => list?
+;;;   exp: list?
+;;; Calculates the derivative of an exponent.
+(define-differentiator (** exp var)
+  (simplify (list '**
+   (simplify (list '* (base exp)
+             (exponent exp)))
+   (- (exponent exp) 1))))
+
+
+;;; simplification-table => hash?
+;;; table of simplification functions
+;;; (replaces 'make-sum', 'make-product', 'make-exponentiation')
+(define simplification-table (make-hash))
+
+;;; (simplify exp) => list?
+;;;   exp: an expression / list to be simplified
+;;; apply simplification rules stored in simplification-table to an expression
+(define (simplify exp)
+  (cond ((and (pair? exp)
+               (symbol? (car exp))
+               (hash-has-key? simplification-table (car exp)))
+          ((hash-ref simplification-table (car exp)) exp))
+         (else
+          exp)))
+
+;;; (define-simplifier (op exp) (body ...))
+;;;   op: arithmetic operator
+;;;   exp: list?
+;;;   body: a function that takes one parameter, 'exp'
+;;; interface for developer to define new differentiation functions
+(define-syntax-rule (define-simplifier (op exp)
+                      (body ...))
+  (hash-set! simplification-table 'op
+             (lambda (exp)
+               body ...)))
+
+;;; (simplify-recurse op exp pos) -> number? | list?
+;;;   op: symbol?
+;;;   exp: list?
+;;;   pos: number?
+;;; applies simplification to expressions that have more than 2 operands
+;;; used by all operation types.
+;;; runs through remainder of list with overlapping binary simplifications.
+(define (simplify-recurse op exp pos)
+  (cond ((>= (+ pos 2) (length exp))
+         (simplify (list op (list-ref exp pos) (list-ref exp (+ pos 1)))))
+        (else
+         (simplify (list op (list-ref exp pos) (simplify-recurse op exp (+ pos 1)))))))
+
+;;; ((hash-ref simplification-table +) exp) => list? | number?
+;;;   exp: list?
+;;; Simplifies a sum expression.
+(define-simplifier (+ exp)
+  ((cond ((=number? (addend exp) 0) 
+         (augend exp))
+        ((=number? (augend exp) 0) 
+         (addend exp))
+        ((and (number? (addend exp))
+               (number? (augend exp)))
+         (+ (addend exp) (augend exp)))
+        (else exp))))
+
+;;; ((hash-ref simplification-table *) exp) => list? | number?
+;;;   exp: list?
+;;; Simplifies a product expression.
+(define-simplifier (* exp)
+  ((cond ((or (=number? (multiplier exp) 0) (=number? (multiplicand exp) 0)) 0)
+        ((=number? (multiplier exp) 1) (multiplicand exp))
+        ((=number? (multiplicand exp) 1) (multiplier exp))
+        ((and (number? (multiplier exp)) 
+              (number? (multiplicand exp)))
+         (* (multiplier exp) (multiplicand exp)))
+        (else exp))))
+
+;;; ((hash-ref simplification-table **) exp) => list? | number?
+;;;   exp: list?
+;;; Simplifies an exponential expression
+(define-simplifier (** exp)
+  ((cond ((=number? (exponent exp) 0) 1)
+        ((=number? (exponent exp) 1) (base exp))
+        ((and (number? (base exp))
+             (number? (exponent exp)))
+         (exponentiate (base exp) (exponent exp)))
+        (else (list '** (base exp) (exponent exp))))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; deriv
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; example
+;;; > (deriv '(* (** x 4) 2) 'x)
+;;; '(* (** (* x 4) 3) 2)         ; d/dx(2 * (x^4) dx) = 8x^3
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; (deriv exp var) => list?
+;;;   exp: list?
+;;;   var: variable?
+;;; differentiate the expression exp with respect to the variable var
+(define (deriv exp var)
+  (cond ((number? exp) 0)
+        ((variable? exp)
+         (if (same-variable? exp var) 1 0))
+        ((and (pair? exp)
+              (symbol? (car exp)))
+         (simplify ((hash-ref diff-table (car exp)) exp var)))
+        (else
+         (error "unknown expression type - DERIV" exp))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; helper functions
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; general predicates
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 ;;; (variable? e) => boolean?
 ;;;   e: any/c
 ;;; Is e a variable?
@@ -24,13 +180,6 @@
        (variable? v2)
        (eq? v1 v2)))
 
-;;; (sum? e) => boolean?
-;;;   e: any/c
-;;; Is e a sum?  checks the first item in the list for the plus symbol.
-(define (sum? e)                  
-  (and (pair? e)
-       (eq? (first e) '+)))
-
 ;;; (=number? exp num) => boolean?
 ;;;   exp: any/c
 ;;;   num: number?
@@ -38,6 +187,18 @@
 (define (=number? exp num)
   (and (number? exp)
        (= exp num)))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; sum operations
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; (sum? e) => boolean?
+;;;   e: any/c
+;;; Is e a sum?  checks the first item in the list for the plus symbol.
+(define (sum? e)                  
+  (and (pair? e)
+       (eq? (first e) '+)))
 
 ;;; (addend e) => any
 ;;;   e: list?
@@ -52,42 +213,12 @@
   (cond ((eq? (length e) 3)
          (third e))
         (else
-         (op-recurse (cddr e) make-sum))))
+         (simplify-recurse '+ (cddr e) 0))))
 
-;;; (op-recurse e op) -> number? | list?
-;;;   e: list?
-;;;   op: any simplification function (make-sum, make-product)
-;;; handles operations that have more than 2 operands
-(define (op-recurse e op)
-  (cond        ((= (length e) 2)
-               (op (first e) (second e)))
-               ((> (length e) 2)
-               (op (first e) (op-recurse (cdr e) op)))
-               (else
-                (error "parameter should be list with length > 1"))))
-         
-;;; note: wanted to implement 'any-sized list operations' via for/fold as follows, but
-;;; didn't know how to handle the two-valued result, and couldn't find examples via
-;;; racket-lang.org or stackoverflow.com
-;         (for/fold ([accum 0]
-;                    [notnums null])
-;                   ([x (cddr e)])
-;           (values (if (number? x)
-;                         (+ accum x) accum) 
-;                   (if (not (number? x)) (cons x notnums) notnums)))
-;         )))
 
-;;; (make-sum a1 a2) => list?
-;;;   a1: any/c
-;;;   a2: any/c
-;;; Construct the sum of a1 and a2.
-(define (make-sum a1 a2) 
-  (cond ((=number? a1 0) a2)
-        ((=number? a2 0) a1)
-        ((and (number? a1)
-              (number? a2))
-         (+ a1 a2))
-        (else (list '+ a1 a2))))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; product operations
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;; (product? e) => boolean?
 ;;;   e: list?
@@ -109,20 +240,12 @@
   (cond ((eq? (length e) 3)
          (third e))
         (else
-         (op-recurse (cddr e) make-product))))
+         (simplify-recurse '* (cddr e) 0))))
 
-;;; (make-product m1 m2) => list?
-;;;   m1: any/c
-;;;   m2: any/c
-;;; Construct the product of m1 and m2.
-(define (make-product m1 m2)
-  (cond ((or (=number? m1 0) (=number? m2 0)) 0)
-        ((=number? m1 1) m2)
-        ((=number? m2 1) m1)
-        ((and (number? m1) 
-              (number? m2))
-         (* m1 m2))
-        (else (list '* m1 m2))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; exponentiation operations
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;; (exponentiation? e) => boolean?
 ;;;   e: any/c
@@ -143,18 +266,6 @@
 (define (exponent e)
          (third e))
 
-;;; (make-exponentiation b e) => list?
-;;;   b: any/c
-;;;   e: any/c
-;;; construct an exponential expression
-(define (make-exponentiation b e)
-  (cond ((=number? e 0) 1)
-        ((=number? e 1) b)
-        ((and (number? b)
-             (number? e))
-         (exponentiate b e))
-        (else (list '** b e))))
-
 ;;; (exponentiate b e) => number?
 ;;;   b: number?
 ;;;   e: number?
@@ -165,43 +276,3 @@
         ((eq? e 0) 1)
         ((> e 0)
          (* b (exponentiate b (- e 1))))))
-     
-
-;;; (deriv exp var) => list?
-;;;   exp: list?
-;;;   var: variable?
-;;; differentiate the expression exp with respect to the variable var
-(define (deriv exp var)
-  (cond ((number? exp) 0)
-        ((variable? exp)
-         (if (same-variable? exp var) 1 0))
-        ((and (pair? exp)
-              (symbol? (car exp)))
-         ((hash-ref diff-table (car exp)) exp var))
-        (else
-         (error "unknown expression type - DERIV" exp))))
-
-
-;;; diff-table => hash?
-;;; table of differentiation functions
-(define diff-table (make-hash))
-(hash-set! diff-table '+ (lambda (exp var)
-                           (make-sum (deriv (addend exp) var)
-                                     (deriv (augend exp) var))))
-(hash-set! diff-table '* (lambda (exp var)
-                           (make-sum
-                            (make-product (multiplier exp)
-                                          (deriv (multiplicand exp) var))
-                            (make-product (deriv (multiplier exp) var)
-                                          (multiplicand exp)))))
-(hash-set! diff-table '** (lambda (exp var)
-                            (make-exponentiation
-                             (make-product (base exp)
-                                           (exponent exp))
-                             (- (exponent exp) 1))))
-
-(define-syntax-rule (define-differentiator (op exp var)
-                      (body ...))
-  (hash-set! diff-table 'op
-             (lambda (exp var)
-               body ...)))
