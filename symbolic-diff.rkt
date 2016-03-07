@@ -141,7 +141,7 @@
 ;;;   e: list?
 ;;; returns the exponent of this exponential expression
 (define (exponent e)
-  (third e))
+         (third e))
 
 ;;; (make-exponentiation b e) => list?
 ;;;   b: any/c
@@ -181,13 +181,6 @@
         (else
          (error "unknown expression type - DERIV" exp))))
 
-(define-syntax-rule (define-differentiator (op exp var)
-                      (body ...))
-  (hash-set! diff-table 'op
-             (lambda (exp var)
-               body ...)))
-
-
 
 ;;; diff-table => hash?
 ;;; table of differentiation functions
@@ -207,16 +200,8 @@
                                            (exponent exp))
                              (- (exponent exp) 1))))
 
-
-
-(define simplification-table (make-hash))
-;;; (simplify exp) => list?
-;;;   exp: an expression / list to be simplified
-;;; apply simplification rules stored in simplification-table to an expression
-(define (simplify exp)
-  ((cond ((and (pair? exp)
-               (symbol? (car exp))
-               (hash-has-key? (simplification-table (car exp))))
-          ((hash-ref simplification-table (car exp) exp)))
-         (else
-          exp))))
+(define-syntax-rule (define-differentiator (op exp var)
+                      (body ...))
+  (hash-set! diff-table 'op
+             (lambda (exp var)
+               body ...)))
